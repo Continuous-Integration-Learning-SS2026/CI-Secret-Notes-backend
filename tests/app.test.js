@@ -1,8 +1,8 @@
-const Fastify = require('fastify');
 const { Pool } = require('pg');
 const crypto = require('crypto');
 
-// Mock the pg Pool module before importing or setting up the app logic
+// Mock the pg Pool module before importing index.js, so index.js gets our
+// mock instance instead of a real database connection.
 jest.mock('pg', () => {
     const mPool = {
         query: jest.fn(),
@@ -10,79 +10,18 @@ jest.mock('pg', () => {
     return { Pool: jest.fn(() => mPool) };
 });
 
-// Re-create the server instantiation logic for testing isolation
-function buildApp() {
-    const fastify = Fastify({ logger: false });
-    const pool = new Pool();
-
-    const ALGORITHM = 'aes-256-cbc';
-    const deriveKey = (password) => crypto.createHash('sha256').update(String(password)).digest('base64').substring(0, 32);
-
-    // CORS Hooks
-    fastify.addHook('onRequest', (request, reply, done) => {
-        reply.header('Access-Control-Allow-Origin', '*');
-        reply.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-        reply.header('Access-Control-Allow-Headers', 'Content-Type');
-        if (request.method === 'OPTIONS') {
-            reply.send();
-        } else {
-            done();
-        }
-    });
-
-    // Route: Get all notes
-    fastify.get('/api/notes', async (request, reply) => {
-        const { rows } = await pool.query('SELECT id, title FROM notes ORDER BY id DESC');
-        return rows;
-    });
-
-    // Route: Create note
-    fastify.post('/api/notes', async (request, reply) => {
-        const { title, content, key } = request.body;
-        const iv = crypto.randomBytes(16);
-        const encryptionKey = deriveKey(key);
-        
-        const cipher = crypto.createCipheriv(ALGORITHM, encryptionKey, iv);
-        let encryptedContent = cipher.update(content, 'utf8', 'hex');
-        encryptedContent += cipher.final('hex');
-
-        const result = await pool.query(
-            'INSERT INTO notes (title, encrypted_content, iv) VALUES ($1, $2, $3) RETURNING id, title',
-            [title, encryptedContent, iv.toString('hex')]
-        );
-        return { success: true, note: result.rows[0] };
-    });
-
-    // Route: Unlock note
-    fastify.post('/api/notes/unlock', async (request, reply) => {
-        const { id, key } = request.body;
-        const { rows } = await pool.query('SELECT encrypted_content, iv FROM notes WHERE id = $1', [id]);
-        
-        if (rows.length === 0) {
-            return reply.code(404).send({ error: 'Note not found' });
-        }
-
-        try {
-            const encryptionKey = deriveKey(key);
-            const decipher = crypto.createDecipheriv(ALGORITHM, encryptionKey, Buffer.from(rows[0].iv, 'hex'));
-            let decrypted = decipher.update(rows[0].encrypted_content, 'hex', 'utf8');
-            decrypted += decipher.final('utf8');
-            return { success: true, content: decrypted };
-        } catch (err) {
-            return reply.code(403).send({ error: 'Invalid key' });
-        }
-    });
-
-    return fastify;
-}
+// Import the REAL application code (not a copy). Because index.js only
+// starts listening / touches the DB when `require.main === module`, it's
+// safe to require here: we just get the exported buildApp factory.
+const { buildApp } = require('../index');
 
 describe('Secret Notes Backend API - 10 Unit/Integration Tests', () => {
     let app;
     let mockPoolInstance;
 
     beforeAll(() => {
-        app = buildApp();
         mockPoolInstance = new Pool();
+        app = buildApp(mockPoolInstance);
     });
 
     afterAll(async () => {
@@ -105,7 +44,6 @@ describe('Secret Notes Backend API - 10 Unit/Integration Tests', () => {
 
         expect(response.statusCode).toBe(200);
         expect(JSON.parse(response.payload)).toEqual([]);
-        expect(mockPoolInstance.query).getMockName;
     });
 
     test('2. GET /api/notes should return only metadata (id and title) for existing notes', async () => {
@@ -240,16 +178,20 @@ describe('Secret Notes Backend API - 10 Unit/Integration Tests', () => {
     });
 
     test('8. POST /api/notes/unlock should return 403 error when given an incorrect decryption key', async () => {
-        // Store with one key setup
+        // Store a note that was actually encrypted with a DIFFERENT key,
+        // so decrypting with the wrong key fails realistically (bad padding),
+        // instead of relying on a hardcoded dummy hex string.
+        const derivedKey = crypto.createHash('sha256').update('right-key').digest('base64').substring(0, 32);
         const iv = crypto.randomBytes(16);
+        const cipher = crypto.createCipheriv('aes-256-cbc', derivedKey, iv);
+        let enc = cipher.update('Top secret content', 'utf8', 'hex');
+        enc += cipher.final('hex');
+
         mockPoolInstance.query.mockResolvedValueOnce({
-            rows: [{ 
-                encrypted_content: 'abcdef1234567890', // dummy hex payload
-                iv: iv.toString('hex') 
-            }]
+            rows: [{ encrypted_content: enc, iv: iv.toString('hex') }]
         });
 
-        // Request decryption with an arbitrary wrong key
+        // Request decryption with the wrong key
         const response = await app.inject({
             method: 'POST',
             url: '/api/notes/unlock',
@@ -282,6 +224,6 @@ describe('Secret Notes Backend API - 10 Unit/Integration Tests', () => {
         });
 
         // Fastify defaults to 500 status on unhandled internal route crashes
-        expect(response.statusCode).toBe(500); 
+        expect(response.statusCode).toBe(500);
     });
 });
