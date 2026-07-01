@@ -1,0 +1,29 @@
+{
+  "name": "ci-secret-notes-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Continuous-Integration-Learning-SS2026/CI-Secret-Notes-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Continuous-Integration-Learning-SS2026/CI-Secret-Notes-backend/issues"
+  },
+  "homepage": "https://github.com/Continuous-Integration-Learning-SS2026/CI-Secret-Notes-backend#readme",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "fastify": "^5.9.0",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2"
+  }
+}
