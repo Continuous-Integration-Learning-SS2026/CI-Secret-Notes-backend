@@ -9,31 +9,21 @@
 # Both colors run simultaneously; only one receives real traffic at a time,
 # controlled by the "lb" (nginx) container's active upstream config, which
 # deploy/switch-blue-green.sh flips with a zero-downtime `nginx -s reload`.
-# Both colors point at the SAME real database (DATABASE_URL) - blue/green
-# swaps app code, not data.
 #
-# Deploy flow (see section 8 of the project spec):
-#   1. docker compose -f compose.prod.yml build backend-green frontend-green
-#   2. docker compose -f compose.prod.yml up -d backend-green frontend-green
-#   3. Run E2E/perf tests against green directly (bypassing the LB), e.g. :3002 / :8082
-#   4. If green passes: ./deploy/switch-blue-green.sh green
-#   5. Once confident, stop the old blue containers (or leave as instant rollback)
-#
-# DATABASE_URL is expected in a .env file in this directory (same as compose.yml uses).
+# DATABASE_URL is expected to come from a real .env file on the EC2 host,
+# never committed.
 services:
   backend-blue:
     build: .
     restart: unless-stopped
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
+    env_file: ./.env
     ports:
       - "3001:3000"
 
   backend-green:
     build: .
     restart: unless-stopped
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
+    env_file: ./.env
     ports:
       - "3002:3000"
 
