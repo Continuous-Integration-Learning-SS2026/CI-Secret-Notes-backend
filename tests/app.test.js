@@ -90,7 +90,7 @@ describe('Secret Notes Backend API - 10 Unit/Integration Tests', () => {
         expect(data.note.title).toBe('My Secret Diary');
     });
 
-    test('4. POST /api/notes should format and store the iv and encrypted_content securely as hex strings', async () => {
+    test('4. POST /api/notes should format and store the iv, encrypted_content, and tag securely as hex strings', async () => {
         mockPoolInstance.query.mockResolvedValueOnce({ rows: [{ id: 1, title: 'Test' }] });
 
         await app.inject({
@@ -107,11 +107,15 @@ describe('Secret Notes Backend API - 10 Unit/Integration Tests', () => {
         const dbArgs = mockPoolInstance.query.mock.calls[0][1];
         const encryptedContentParam = dbArgs[1];
         const ivParam = dbArgs[2];
+        const tagParam = dbArgs[3]; // The new authentication tag parameter
 
         // Hex matches regex: check if valid string characters
         expect(encryptedContentParam).toMatch(/^[0-9a-fA-F]+$/);
         expect(ivParam).toMatch(/^[0-9a-fA-F]+$/);
         expect(ivParam.length).toBe(32); // 16 bytes IV = 32 hex chars
+        
+        expect(tagParam).toMatch(/^[0-9a-fA-F]+$/);
+        expect(tagParam.length).toBe(32); // 16 bytes GCM Auth Tag = 32 hex chars
     });
 
     test('5. POST /api/notes should produce unique ciphertexts for identical contents due to randomized IVs', async () => {
@@ -140,16 +144,17 @@ describe('Secret Notes Backend API - 10 Unit/Integration Tests', () => {
     // --- POST /api/notes/unlock (Decryption) Tests ---
 
     test('6. POST /api/notes/unlock should successfully decrypt a note when providing the correct key', async () => {
-        // Setup raw material manually to mock DB response accurately
+        // Setup raw material manually to mock DB response accurately using aes-256-gcm
         const rawKey = 'correct-passphrase';
         const derivedKey = crypto.createHash('sha256').update(rawKey).digest('base64').substring(0, 32);
         const iv = crypto.randomBytes(16);
-        const cipher = crypto.createCipheriv('aes-256-cbc', derivedKey, iv);
+        const cipher = crypto.createCipheriv('aes-256-gcm', derivedKey, iv);
         let enc = cipher.update('Hello Austrian DevOps Team!', 'utf8', 'hex');
         enc += cipher.final('hex');
+        const tag = cipher.getAuthTag();
 
         mockPoolInstance.query.mockResolvedValueOnce({
-            rows: [{ encrypted_content: enc, iv: iv.toString('hex') }]
+            rows: [{ encrypted_content: enc, iv: iv.toString('hex'), tag: tag.toString('hex') }]
         });
 
         const response = await app.inject({
@@ -178,17 +183,17 @@ describe('Secret Notes Backend API - 10 Unit/Integration Tests', () => {
     });
 
     test('8. POST /api/notes/unlock should return 403 error when given an incorrect decryption key', async () => {
-        // Store a note that was actually encrypted with a DIFFERENT key,
-        // so decrypting with the wrong key fails realistically (bad padding),
-        // instead of relying on a hardcoded dummy hex string.
+        // Store a note that was encrypted with a DIFFERENT key under aes-256-gcm.
+        // Decrypting with the wrong key triggers a GCM authentication failure instead of a bad padding error.
         const derivedKey = crypto.createHash('sha256').update('right-key').digest('base64').substring(0, 32);
         const iv = crypto.randomBytes(16);
-        const cipher = crypto.createCipheriv('aes-256-cbc', derivedKey, iv);
+        const cipher = crypto.createCipheriv('aes-256-gcm', derivedKey, iv);
         let enc = cipher.update('Top secret content', 'utf8', 'hex');
         enc += cipher.final('hex');
+        const tag = cipher.getAuthTag();
 
         mockPoolInstance.query.mockResolvedValueOnce({
-            rows: [{ encrypted_content: enc, iv: iv.toString('hex') }]
+            rows: [{ encrypted_content: enc, iv: iv.toString('hex'), tag: tag.toString('hex') }]
         });
 
         // Request decryption with the wrong key

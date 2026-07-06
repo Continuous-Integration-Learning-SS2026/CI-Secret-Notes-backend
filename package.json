@@ -22,21 +22,29 @@
   },
   "homepage": "https://github.com/Continuous-Integration-Learning-SS2026/CI-Secret-Notes-backend#readme",
   "dependencies": {
+    "@fastify/cors": "^10.0.1",
     "dotenv": "^17.4.2",
     "fastify": "^5.9.0",
-    "pg": "^8.22.0",
-    "@fastify/cors": "^10.0.1"
+    "pg": "^8.22.0"
   },
   "devDependencies": {
+    "eslint": "^8.57.0",
     "jest": "^30.4.2",
-    "supertest": "^7.2.2",
-    "eslint": "^8.57.0"
+    "snyk": "^1.1305.2",
+    "supertest": "^7.2.2"
   },
   "jest": {
     "testEnvironment": "node",
-    "collectCoverageFrom": ["index.js"],
+    "collectCoverageFrom": [
+      "index.js"
+    ],
     "coverageThreshold": {
-      "global": {"statements": 70, "branches": 70, "functions": 70, "lines": 70}
+      "global": {
+        "statements": 70,
+        "branches": 70,
+        "functions": 70,
+        "lines": 70
+      }
     }
   }
 }
