@@ -6,3 +6,11 @@ node_modules/
 
 # Log-files
 npm-debug.log
+
+
+coverage/
+dist/
+build/
+.env.local
+*.log
+.DS_Store
