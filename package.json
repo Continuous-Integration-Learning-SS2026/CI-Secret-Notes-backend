@@ -34,10 +34,10 @@
     "supertest": "^7.2.2"
   },
   "jest": {
+    "collectCoverage": true,
+    "coverageReporters": ["lcov", "text"],
+    "collectCoverageFrom": ["src/**/*.js", "index.js"],
     "testEnvironment": "node",
-    "collectCoverageFrom": [
-      "index.js"
-    ],
     "coverageThreshold": {
       "global": {
         "statements": 70,
