@@ -1,0 +1,64 @@
+# Blue/Green production stack for AWS EC2.
+#
+# This repo (CI-Secret-Notes-backend) owns the shared deploy/infra files, so
+# it expects CI-Secret-Notes-frontend to be checked out as a SIBLING
+# directory on the EC2 host:
+#   ~/CI-Secret-Notes-backend   (this repo, run docker compose from here)
+#   ~/CI-Secret-Notes-frontend
+#
+# Both colors run simultaneously; only one receives real traffic at a time,
+# controlled by the "lb" (nginx) container's active upstream config, which
+# deploy/switch-blue-green.sh flips with a zero-downtime `nginx -s reload`.
+# Both colors point at the SAME real database (DATABASE_URL) - blue/green
+# swaps app code, not data.
+#
+# Deploy flow (see section 8 of the project spec):
+#   1. docker compose -f compose.prod.yml build backend-green frontend-green
+#   2. docker compose -f compose.prod.yml up -d backend-green frontend-green
+#   3. Run E2E/perf tests against green directly (bypassing the LB), e.g. :3002 / :8082
+#   4. If green passes: ./deploy/switch-blue-green.sh green
+#   5. Once confident, stop the old blue containers (or leave as instant rollback)
+#
+# DATABASE_URL is expected in a .env file in this directory (same as compose.yml uses).
+services:
+  backend-blue:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    ports:
+      - "3001:3000"
+
+  backend-green:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    ports:
+      - "3002:3000"
+
+  frontend-blue:
+    build: ../CI-Secret-Notes-frontend
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+
+  frontend-green:
+    build: ../CI-Secret-Notes-frontend
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+
+  lb:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend-blue
+      - backend-green
+      - frontend-blue
+      - frontend-green
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx:/etc/nginx/active:ro
