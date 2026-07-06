@@ -1,12 +1,121 @@
+// Self-hosted Jenkins pipeline for the backend, mirroring the same 5+ stages
+// as .github/workflows/backend-ci.yml. Lives in and runs against the
+// CI-Secret-Notes-backend repo (checked out at the repo root, no subfolder).
+// Requires on Jenkins:
+//   - The NodeJS plugin with a "node20" tool installation (Manage Jenkins > Tools)
+//   - Docker Pipeline, SonarQube Scanner, SSH Agent plugins
+//   - Credentials: dockerhub-creds (username/password), sonar-token (secret text),
+//     snyk-token (secret text), ec2-ssh-key (SSH private key), slack-webhook (secret text)
+//   - A configured SonarQube server named "sonarqube-server" in Manage Jenkins > System
+
 pipeline {
   agent any
 
   tools {
-    nodejs 'node26'
+    nodejs 'node20'
   }
 
   options {
     timestamps()
     disableConcurrentBuilds()
   }
-  ...
+
+  environment {
+    IMAGE_NAME = "secret-notes-backend"
+  }
+
+  stages {
+    stage('Lint') {
+      steps {
+        sh 'npm ci'
+        sh 'npm run lint'
+        withSonarQubeEnv('sonarqube-server') {
+          sh 'npx sonar-scanner -Dsonar.projectBaseDir=.'
+        }
+        withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+          sh 'npx snyk auth $SNYK_TOKEN'
+          sh 'npx snyk test --severity-threshold=high'
+        }
+      }
+    }
+
+    stage('Test') {
+      steps {
+        sh 'npm test'
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'coverage/**', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Build') {
+      steps {
+        sh "docker build -t ${IMAGE_NAME}:${env.GIT_COMMIT} ."
+      }
+    }
+
+    stage('Deliver') {
+      when { branch 'deploy/production' }
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')]) {
+          sh 'echo $DOCKERHUB_PASSWORD | docker login -u $DOCKERHUB_USERNAME --password-stdin'
+          sh "docker tag ${IMAGE_NAME}:${env.GIT_COMMIT} \$DOCKERHUB_USERNAME/secret-notes-backend:${env.GIT_COMMIT}"
+          sh "docker tag ${IMAGE_NAME}:${env.GIT_COMMIT} \$DOCKERHUB_USERNAME/secret-notes-backend:latest"
+          sh "docker push \$DOCKERHUB_USERNAME/secret-notes-backend:${env.GIT_COMMIT}"
+          sh "docker push \$DOCKERHUB_USERNAME/secret-notes-backend:latest"
+        }
+      }
+    }
+
+    stage('Deploy (green)') {
+      when { branch 'deploy/production' }
+      steps {
+        withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
+          sh '''
+            ssh -o StrictHostKeyChecking=no -i $SSH_KEY $SSH_USER@$EC2_HOST '
+              cd ~/CI-Secret-Notes-backend &&
+              git fetch origin deploy/production &&
+              git checkout deploy/production &&
+              git pull origin deploy/production &&
+              docker compose -f docker-compose.prod.yml build backend-green &&
+              docker compose -f docker-compose.prod.yml up -d backend-green
+            '
+          '''
+        }
+      }
+    }
+
+    stage('E2E, Performance & Switch') {
+      when { branch 'deploy/production' }
+      steps {
+        dir('e2e/playwright') {
+          sh 'npm ci'
+          sh 'npx playwright install --with-deps chromium'
+          sh 'BASE_URL=http://$EC2_HOST:8082 npx playwright test'
+        }
+        sh 'k6 run -e BASE_URL=http://$EC2_HOST:3002 e2e/k6/load-test.js'
+        withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
+          sh '''
+            ssh -o StrictHostKeyChecking=no -i $SSH_KEY $SSH_USER@$EC2_HOST '
+              cd ~/CI-Secret-Notes-backend && ./deploy/switch-blue-green.sh green
+            '
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    failure {
+      withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_WEBHOOK_URL')]) {
+        sh '''
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\\"text\\": \\"Backend Jenkins pipeline failed on branch ${BRANCH_NAME} build #${BUILD_NUMBER} - ${BUILD_URL}\\"}" \
+            $SLACK_WEBHOOK_URL
+        '''
+      }
+    }
+  }
+}
