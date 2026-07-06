@@ -136,4 +136,76 @@ jobs:
             {"text": "Backend CI failed at *deliver* stage on ${{ github.ref_name }} (${{ github.sha }}) - <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|view run>"}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+# Stage 5: Deploy to the "green" slot on AWS EC2 (staging), blue/green
+  deploy:
+    needs: deliver
+    if: github.ref == 'refs/heads/deploy/production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy green backend over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/CI-Secret-Notes-backend
+            git fetch origin deploy/production
+            git checkout deploy/production
+            git pull origin deploy/production
+            docker compose -f compose.prod.yml pull backend-green || true
+            docker compose -f compose.prod.yml build backend-green
+            docker compose -f compose.prod.yml up -d backend-green
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {"text": "Backend CI failed at *deploy* stage on ${{ github.ref_name }} (${{ github.sha }}) - <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|view run>"}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
+  # Stage 6: E2E + performance tests against green, then flip blue/green
+  e2e-and-switch:
+    needs: deploy
+    if: github.ref == 'refs/heads/deploy/production'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Playwright
+        working-directory: e2e/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run Playwright against green
+        working-directory: e2e/playwright
+        env:
+          BASE_URL: http://${{ secrets.EC2_HOST }}:8082
+        run: npx playwright test
+      - name: Run k6 load test against green
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: e2e/k6/load-test.js
+        env:
+          BASE_URL: http://${{ secrets.EC2_HOST }}:3002
+      - name: Switch traffic to green
+        if: success()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/CI-Secret-Notes-backend
+            ./deploy/switch-blue-green.sh green
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {"text": "Backend CI failed at *e2e/switch* stage on ${{ github.ref_name }} (${{ github.sha }}) - blue/green NOT switched - <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|view run>"}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
