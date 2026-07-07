@@ -153,9 +153,9 @@ jobs:
             git fetch origin deploy/production
             git checkout deploy/production
             git pull origin deploy/production
-            docker compose -f compose.prod.yml pull backend-green || true
-            docker compose -f compose.prod.yml build backend-green
-            docker compose -f compose.prod.yml up -d backend-green
+            docker compose -f docker-compose.prod.yml pull backend-green || true
+            docker compose -f docker-compose.prod.yml build backend-green
+            docker compose -f docker-compose.prod.yml up -d backend-green
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.27.0
