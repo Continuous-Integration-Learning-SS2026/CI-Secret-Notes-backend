@@ -57,7 +57,7 @@ pipeline {
     }
 
     stage('Deliver') {
-      when { branch 'deploy/production' }
+      when { expression { env.GIT_BRANCH == 'origin/deploy/production' } }}
       steps {
         withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')]) {
           sh 'echo $DOCKERHUB_PASSWORD | docker login -u $DOCKERHUB_USERNAME --password-stdin'
@@ -70,7 +70,7 @@ pipeline {
     }
 
     stage('Deploy (green)') {
-      when { branch 'deploy/production' }
+      when { expression { env.GIT_BRANCH == 'origin/deploy/production' } }
       steps {
         withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
           sh '''
@@ -88,7 +88,7 @@ pipeline {
     }
 
     stage('E2E, Performance & Switch') {
-      when { branch 'deploy/production' }
+      when { expression { env.GIT_BRANCH == 'origin/deploy/production' } }
       steps {
         dir('e2e/playwright') {
           sh 'npm ci'
