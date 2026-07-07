@@ -9,10 +9,10 @@ test.describe('Feature A + B - create and unlock an encrypted note', () => {
 
     await page.goto('/');
 
-    await page.getByPlaceholder(/title/i).fill(uniqueTitle);
-    await page.getByPlaceholder(/content|note|message/i).fill(secretContent);
-    await page.getByPlaceholder(/key|password|passphrase/i).first().fill(unlockKey);
-    await page.getByRole('button', { name: /save|create|add/i }).click();
+    await page.locator('#note-title').fill(uniqueTitle);
+    await page.locator('#note-content').fill(secretContent);
+    await page.locator('#note-key').fill(unlockKey);
+    await page.getByRole('button', { name: 'Create New Note' }).click();
 
     await expect(page.getByText(uniqueTitle)).toBeVisible();
 
@@ -26,16 +26,16 @@ test.describe('Feature A + B - create and unlock an encrypted note', () => {
     const unlockKey = 'correct-e2e-key';
 
     await page.goto('/');
-    await page.getByPlaceholder(/title/i).fill(uniqueTitle);
-    await page.getByPlaceholder(/content|note|message/i).fill(secretContent);
-    await page.getByPlaceholder(/key|password|passphrase/i).first().fill(unlockKey);
-    await page.getByRole('button', { name: /save|create|add/i }).click();
+    await page.locator('#note-title').fill(uniqueTitle);
+    await page.locator('#note-content').fill(secretContent);
+    await page.locator('#note-key').fill(unlockKey);
+    await page.getByRole('button', { name: 'Create New Note' }).click();
 
-    await page.getByText(uniqueTitle).click();
-    await page.getByPlaceholder(/key|password|passphrase/i).last().fill(unlockKey);
-    await page.getByRole('button', { name: /unlock|view|decrypt/i }).click();
+    const noteArticle = page.locator('.note-item', { hasText: uniqueTitle });
+    await noteArticle.locator('.unlock-input').fill(unlockKey);
+    await noteArticle.locator('.decrypt-btn').click();
 
-    await expect(page.getByText(secretContent)).toBeVisible();
+    await expect(noteArticle.locator('.decrypted-content p')).toHaveText(secretContent);
   });
 
   test('unlocking with the wrong key is rejected', async ({ page }) => {
@@ -43,22 +43,27 @@ test.describe('Feature A + B - create and unlock an encrypted note', () => {
     const secretContent = 'Wrong key must not unlock this note.';
 
     await page.goto('/');
-    await page.getByPlaceholder(/title/i).fill(uniqueTitle);
-    await page.getByPlaceholder(/content|note|message/i).fill(secretContent);
-    await page.getByPlaceholder(/key|password|passphrase/i).first().fill('right-key');
-    await page.getByRole('button', { name: /save|create|add/i }).click();
+    await page.locator('#note-title').fill(uniqueTitle);
+    await page.locator('#note-content').fill(secretContent);
+    await page.locator('#note-key').fill('right-key');
+    await page.getByRole('button', { name: 'Create New Note' }).click();
 
-    await page.getByText(uniqueTitle).click();
-    await page.getByPlaceholder(/key|password|passphrase/i).last().fill('wrong-key');
-    await page.getByRole('button', { name: /unlock|view|decrypt/i }).click();
+    const noteArticle = page.locator('.note-item', { hasText: uniqueTitle });
+    await noteArticle.locator('.unlock-input').fill('wrong-key');
 
-    await expect(page.getByText(/invalid key|incorrect|denied|error/i)).toBeVisible();
-    await expect(page.getByText(secretContent)).not.toBeVisible();
+    const [dialog] = await Promise.all([
+      page.waitForEvent('dialog'),
+      noteArticle.locator('.decrypt-btn').click(),
+    ]);
+    expect(dialog.message()).toContain('Invalid key');
+    await dialog.dismiss();
+
+    await expect(noteArticle.locator('.decrypted-content')).toBeHidden();
   });
 });
 
 test.describe('Feature C - PostHog-driven A/B UI toggle', () => {
-  test('the app renders one of the two known UI variants without erroring', async ({ page }) => {
+  test('the app renders without erroring, regardless of assigned variant', async ({ page }) => {
     const consoleErrors = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
@@ -67,7 +72,11 @@ test.describe('Feature C - PostHog-driven A/B UI toggle', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByPlaceholder(/title/i)).toBeVisible();
+    // Core form must render regardless of which PostHog variant ('dark-note-theme'
+    // feature flag) this session is assigned - the flag only toggles a CSS class
+    // on the submit button, it never hides the form.
+    await expect(page.locator('#note-title')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create New Note' })).toBeVisible();
     expect(consoleErrors, `Console errors: ${consoleErrors.join('; ')}`).toHaveLength(0);
   });
 });
