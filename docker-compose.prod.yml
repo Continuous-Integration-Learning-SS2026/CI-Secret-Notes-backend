@@ -1,6 +1,6 @@
 services:
   backend-blue:
-    build: .
+    image: armandveress/ci-secret-notes-backend:latest
     restart: unless-stopped
     env_file: ./.env
     ports:
@@ -12,7 +12,7 @@ services:
           - backend
 
   backend-green:
-    build: .
+    image: armandveress/ci-secret-notes-backend:latest
     restart: unless-stopped
     env_file: ./.env
     ports:
@@ -24,7 +24,7 @@ services:
           - backend
 
   frontend-blue:
-    build: ../CI-Secret-Notes-frontend
+    image: armandveress/ci-secret-notes-frontend:latest
     restart: unless-stopped
     ports:
       - "8081:80"
@@ -33,7 +33,7 @@ services:
       - blue-net
 
   frontend-green:
-    build: ../CI-Secret-Notes-frontend
+    image: armandveress/ci-secret-notes-frontend:latest
     restart: unless-stopped
     ports:
       - "8082:80"
