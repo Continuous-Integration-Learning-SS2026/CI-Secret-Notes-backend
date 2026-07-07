@@ -27,12 +27,6 @@ pipeline {
   
   stages {
 
-    stage('Debug') {
-      steps {
-        echo "GIT_BRANCH is: ${env.GIT_BRANCH}"
-      }
-    }
-    
     stage('Lint') {
       steps {
         sh 'npm ci'
