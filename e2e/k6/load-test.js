@@ -60,13 +60,13 @@ export default function () {
     });
 
     const wrongUnlockRes = http.post(
-      `${BASE_URL}/api/notes/unlock`,
-      JSON.stringify({ id: noteId, key: 'definitely-wrong-key' }),
-      { headers: { 'Content-Type': 'application/json' } }
+        `${BASE_URL}/api/notes/unlock`,
+        JSON.stringify({ id: noteId, key: 'definitely-wrong-key' }),
+        {
+            headers: { 'Content-Type': 'application/json' },
+            responseCallback: http.expectedStatuses(200, 403),
+        }
     );
-    check(wrongUnlockRes, {
-      'wrong key returns 403': (r) => r.status === 403,
-    });
   }
 
   sleep(1);
