@@ -36,9 +36,9 @@
   "jest": {
     "collectCoverage": true,
     "coverageReporters": ["lcov", "text"],
-    "collectCoverageFrom": ["*.js",
-    "!jest.config.js", "index.js"],
+    "collectCoverageFrom": ["!jest.config.js", "index.js"],
     "testEnvironment": "node",
+    "testPathIgnorePatterns": ["/node_modules/", "/e2e/"],
     "coverageThreshold": {
       "global": {
         "statements": 70,
