@@ -1,0 +1,12 @@
+{
+  "name": "secret-notes-e2e-playwright",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end tests for Secret Notes, run against the green blue/green slot before traffic switch.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}
