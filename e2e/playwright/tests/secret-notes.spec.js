@@ -12,7 +12,12 @@ test.describe('Feature A + B - create and unlock an encrypted note', () => {
     await page.locator('#note-title').fill(uniqueTitle);
     await page.locator('#note-content').fill(secretContent);
     await page.locator('#note-key').fill(unlockKey);
-    await page.getByRole('button', { name: 'Create New Note' }).click();
+
+    const [response] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/api/notes') && r.request().method() === 'POST'),
+      page.getByRole('button', { name: 'Create New Note' }).click(),
+    ]);
+    expect(response.ok()).toBeTruthy();
 
     await expect(page.getByText(uniqueTitle)).toBeVisible();
 
