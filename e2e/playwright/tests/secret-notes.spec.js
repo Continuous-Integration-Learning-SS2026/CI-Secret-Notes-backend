@@ -8,16 +8,24 @@ test.describe('Feature A + B - create and unlock an encrypted note', () => {
     const unlockKey = 'e2e-test-key-123';
 
     await page.goto('/');
+    await page.waitForLoadState('networkidle');
 
     await page.locator('#note-title').fill(uniqueTitle);
     await page.locator('#note-content').fill(secretContent);
     await page.locator('#note-key').fill(unlockKey);
 
-    const [response] = await Promise.all([
+    const [postResponse] = await Promise.all([
       page.waitForResponse((r) => r.url().includes('/api/notes') && r.request().method() === 'POST'),
       page.getByRole('button', { name: 'Create New Note' }).click(),
     ]);
-    expect(response.ok()).toBeTruthy();
+    expect(postResponse.ok()).toBeTruthy();
+
+    // The app fires a second GET /api/notes right after the POST to refresh
+    // the list - wait for that to finish too before checking the DOM.
+    const listResponse = await page.waitForResponse(
+      (r) => r.url().includes('/api/notes') && r.request().method() === 'GET'
+    );
+    expect(listResponse.ok()).toBeTruthy();
 
     await expect(page.getByText(uniqueTitle)).toBeVisible();
 
